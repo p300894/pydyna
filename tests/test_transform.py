@@ -109,6 +109,13 @@ def test_transform_matrix_one_scale():
     ref = tfm.scale_matrix(factor=-1.0, direction=[0,1,0])
     assert np.allclose(mtx, ref)
 
+def test_transform_matrix_one_mirror():
+    """Verify the transformation matrix for a single MIRROR."""
+    define_transform_kwd = kwd.DefineTransformation(option="MIRROR", a1=0.0, a2=0.0, a3=0.0, a4=0.0, a5=1.0, a6=0.0)
+    mtx = get_transform_matrix(define_transform_kwd)
+    ref = tfm.scale_matrix(factor=-1.0, direction=[0,1,0])
+    assert np.allclose(mtx, ref)
+
 
 
 def test_transform_unhandled():
