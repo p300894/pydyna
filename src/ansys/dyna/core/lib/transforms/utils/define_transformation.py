@@ -53,7 +53,7 @@ def _get_rotation_matrix(a1: float, a2: float, a3: float, a4: float, a5: float, 
                 raise ValueError("Direction vector A1, A2, A3 cannot be all zero!")
             return tfm.rotation_matrix(math.radians(a7), [a1, a2, a3])
     parameters = (a1, a2, a3, a4, a5, a6, a7)
-    warnings.warn(f"DEFINE_TRANFORMATION ROTATE option with parameters {parameters} not handled yet by pydyna!")
+    warnings.warn(f"DEFINE_TRANSFORMATION ROTATE option with parameters {parameters} not handled yet by pydyna!")
     return None
 
 
@@ -89,7 +89,7 @@ def _get_row_transform_matrix(transform: pd.Series) -> np.ndarray:
     elif option == "SCALE":
         return _get_scale_matrix(a1, a2, a3)
     else:
-        warnings.warn(f"DEFINE_TRANFORMATION option {option} not handled yet by pydyna!")
+        warnings.warn(f"DEFINE_TRANSFORMATION option {option} not handled yet by pydyna!")
         return None
 
 
