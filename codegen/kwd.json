@@ -323385,7 +323385,7 @@
       "fields": [
         {
           "default": "0",
-          "help": "Transformation ID.\nEQ.0: no tranformation will be applied.  See the input *DEFINE_TRANSFORM.",
+          "help": "Transformation ID.\nEQ.0: no transformation will be applied.  See the input *DEFINE_TRANSFORM.",
           "link": 40,
           "name": "TRANID",
           "position": 0,
@@ -323565,7 +323565,7 @@
       "fields": [
         {
           "default": "0",
-          "help": "Transformation ID.\nEQ.0: no tranformation will be applied.  See the input *DEFINE_TRANSFORM.",
+          "help": "Transformation ID.\nEQ.0: no transformation will be applied.  See the input *DEFINE_TRANSFORM.",
           "link": 40,
           "name": "TRANID",
           "position": 0,
