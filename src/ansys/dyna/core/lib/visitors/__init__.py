@@ -19,18 +19,9 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-"""Module for SECTION_TSHELL keyword."""
 
-from ansys.dyna.core.keywords.keyword_classes.auto.section.section_tshell import SectionTShell as Parent
+"""Visitor classes for traversing keyword structures."""
 
+from ansys.dyna.core.lib.visitors.keyword_card_visitor import KeywordCardVisitor
 
-class SectionTShell(Parent):
-    ERR = "nip must be equal to a non-negative integer if icomp is 1"
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-    def _is_valid(self) -> bool:
-        if self.icomp == 0:
-            return True, ""
-        return self.nip > 0, self.ERR
+__all__ = ["KeywordCardVisitor"]
