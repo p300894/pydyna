@@ -21,6 +21,7 @@
 # SOFTWARE.
 """Keyword base class and related functionality."""
 
+import contextlib
 import enum
 import io
 import typing
@@ -28,6 +29,7 @@ import typing
 from ansys.dyna.core.lib.card_interface import CardInterface
 from ansys.dyna.core.lib.cards import Cards
 from ansys.dyna.core.lib.format_type import format_type
+from ansys.dyna.core.lib.option_card import OptionsInterface, OptionSpec
 from ansys.dyna.core.lib.parameters import ParameterSet
 
 # protected due to circular import
@@ -107,8 +109,12 @@ class LinkType(enum.Enum):
     """Reference to either DEFINE_CURVE or DEFINE_TABLE (polymorphic)."""
 
 
-class KeywordBase(Cards):
+class KeywordBase(Cards, OptionsInterface):
     """Base class for all keywords.
+
+    ``KeywordBase`` is the sole owner of option activation state
+    (``_active_options``).  Card-set items that inherit from ``Cards``
+    delegate option queries back to the keyword through ``_keyword``.
 
     Derived class must provide::
         - _cards
@@ -117,12 +123,13 @@ class KeywordBase(Cards):
     """
 
     def __init__(self, **kwargs):
+        self._active_options: typing.Set[str] = set()
         super().__init__(self)
         self.user_comment = kwargs.get("user_comment", "")
         self._format_type: format_type = kwargs.get("format", format_type.default)
         self._deck = None
         self._included_from = None
-        self._parameter_set: typing.Optional[ParameterSet] = None  # Stored for write-time ref lookup
+        self._parameter_set: typing.Optional[ParameterSet] = None
 
     @property
     def deck(self) -> typing.Optional["Deck"]:
@@ -133,12 +140,31 @@ class KeywordBase(Cards):
     def deck(self, deck: "Deck") -> None:
         """Get the deck that this keyword is associated to."""
         if deck is None:
-            self._deck = None
-            return
+            if self._deck is not None:
+                self._detach_from_deck()
+        else:
+            self._attach_to_deck(deck)
 
+    def _detach_from_deck(self) -> None:
+        """Restore independent parameter set when removed from deck."""
+        if self._parameter_set is self._deck.parameters:
+            keyword_prefix = str(id(self))
+            exclude_local = self._deck.parameters.get_local_param_names()
+            extracted_refs, extracted_locations = self._deck.parameters.extract_refs_for_prefix(
+                keyword_prefix, exclude_params=exclude_local
+            )
+            self._parameter_set = ParameterSet()
+            self._parameter_set.add_refs(extracted_refs, extracted_locations)
+        self._deck = None
+
+    def _attach_to_deck(self, deck: "Deck") -> None:
+        """Merge refs into deck and share its parameter set."""
         if self._deck is not None:
             raise Exception("This keyword is already associated with a deck!")
         self._deck = deck
+        if self._parameter_set is not None and self._parameter_set is not deck.parameters:
+            deck.parameters.merge_refs_from(self._parameter_set)
+        self._parameter_set = deck.parameters
 
     @property
     def format(self) -> format_type:
@@ -157,6 +183,50 @@ class KeywordBase(Cards):
         if kwd == subkwd:
             return f"{kwd}"
         return f"{kwd}_{subkwd}"
+
+    # -- OptionsInterface implementation (option state lives here) --
+
+    def is_option_active(self, option: str) -> bool:
+        """Returns True if the given option is active."""
+        return option in self._active_options
+
+    def activate_option(self, option: str) -> None:
+        """Activate the given option."""
+        self._active_options.add(option)
+
+    def deactivate_option(self, option: str) -> None:
+        """Deactivate the given option."""
+        if option in self._active_options:
+            self._active_options.remove(option)
+
+    def _try_activate_options(self, names: typing.List[str]) -> None:
+        for option in self.option_specs:
+            if option.name in names:
+                self.activate_option(option.name)
+
+    def _activate_options(self, title: str) -> None:
+        if self.options is None:
+            return
+        title_list = title.split("_")
+        self._try_activate_options(title_list)
+
+    def get_option_spec(self, name: str) -> OptionSpec:
+        """Gets the option spec for the given name."""
+        for option_spec in self.option_specs:
+            if option_spec.name == name:
+                return option_spec
+        raise Exception(f"No option spec with name `{name}` found")
+
+    @property
+    def option_specs(self) -> typing.Iterable[OptionSpec]:
+        """Gets all option specs by scanning the card list."""
+        for card in self._cards:
+            if hasattr(card, "option_spec"):
+                yield card.option_spec
+            elif hasattr(card, "option_specs"):
+                yield from card.option_specs
+
+    # -- end OptionsInterface implementation --
 
     def get_title(self, format_symbol: str = "") -> str:
         """Get the title of this keyword."""
@@ -367,6 +437,29 @@ class KeywordBase(Cards):
             return title_line[:-1]
         return title_line
 
+    @contextlib.contextmanager
+    def _parameter_scope(
+        self,
+        parameters: typing.Optional[ParameterSet],
+        import_context: typing.Optional["ImportContext"],
+    ) -> typing.Iterator[ParameterSet]:
+        """Set up parameter context for reading, validate after."""
+        # Store parameter set for write-time reference lookup
+        # Always create a ParameterSet so refs can be recorded even when parameters=None
+        effective_params = parameters if parameters is not None else ParameterSet()
+        self._parameter_set = effective_params
+        effective_params.set_context(import_context)
+
+        # Scope the parameter references by this keyword's identity
+        with effective_params.scope(str(id(self))):
+            yield effective_params
+
+        # After loading: if strict mode, raise on unresolved parameters
+        if import_context is not None and import_context.strict:
+            unresolved = effective_params.get_unresolved_param_names(str(id(self)))
+            if unresolved:
+                raise ValueError(f"Undefined parameter(s) in keyword: {', '.join(sorted(set(unresolved)))}")
+
     def read(
         self,
         buf: typing.TextIO,
@@ -392,15 +485,8 @@ class KeywordBase(Cards):
         # TODO: self.user_comment should come from somewhere.
         # maybe after the keyword but before any $#
 
-        # Store parameter set for write-time reference lookup
-        self._parameter_set = parameters
-
-        # Scope the parameter references by this keyword's identity
-        if parameters is not None:
-            with parameters.scope(str(id(self))):
-                self._read_data(buf, parameters, import_context)
-        else:
-            self._read_data(buf, parameters, import_context)
+        with self._parameter_scope(parameters, import_context) as effective_params:
+            self._read_data(buf, effective_params, import_context)
 
     def loads(
         self, value: str, parameters: ParameterSet = None, import_context: typing.Optional["ImportContext"] = None

@@ -28,6 +28,7 @@ import math
 
 import numpy as np
 import pandas as pd
+import warnings
 
 from ansys.dyna.core.lib.config import disable_lspp_defaults
 from ansys.dyna.core.lib.format_type import format_type
@@ -130,6 +131,52 @@ def test_element_solid_read_single_element():
     assert elements.elements["pid"].tolist() == [1]
     assert elements.elements["n1"].tolist() == [1]
     assert elements.elements["n8"].tolist() == [8]
+
+
+def test_element_solid_read_legacy_format_no_spaces():
+    """Test reading ElementSolid from legacy format with no spaces between node IDs.
+    
+    This tests the edge case from the issue where node IDs have no spaces:
+    *ELEMENT_SOLID
+    10061258101301001010292910102928100957511009575710102925101029241009583510095830
+    
+    The parser must correctly detect this as legacy format (line length > 16) and parse
+    the 80-character line as 10 fields of 8 characters each.
+    """
+    legacy_no_space_string = """*ELEMENT_SOLID
+10061258101301001010292910102928100957511009575710102925101029241009583510095830"""
+
+    elements = kwd.ElementSolid()
+    elements.loads(legacy_no_space_string)
+
+    assert len(elements.elements) == 1, f"Expected 1 element, got {len(elements.elements)}"
+    assert elements.elements["eid"].tolist() == [10061258]
+    assert elements.elements["pid"].tolist() == [10130100]
+    assert elements.elements["n1"].tolist() == [10102929]
+    assert elements.elements["n2"].tolist() == [10102928]
+    assert elements.elements["n3"].tolist() == [10095751]
+    assert elements.elements["n4"].tolist() == [10095757]
+    assert elements.elements["n5"].tolist() == [10102925]
+    assert elements.elements["n6"].tolist() == [10102924]
+    assert elements.elements["n7"].tolist() == [10095835]
+    assert elements.elements["n8"].tolist() == [10095830]
+
+
+def test_element_solid_read_legacy_format_multiple_no_spaces():
+    """Test reading ElementSolid from legacy format with multiple elements and no spaces."""
+    legacy_multi_no_space = """*ELEMENT_SOLID
+00000001000000020000000300000004000000050000000600000007000000080000000900000010
+00000011000000120000001300000014000000150000001600000017000000180000001900000020"""
+
+    elements = kwd.ElementSolid()
+    elements.loads(legacy_multi_no_space)
+
+    assert len(elements.elements) == 2, f"Expected 2 elements, got {len(elements.elements)}"
+    assert elements.elements["eid"].tolist() == [1, 11]
+    assert elements.elements["pid"].tolist() == [2, 12]
+    assert elements.elements["n1"].tolist() == [3, 13]
+    assert elements.elements["n2"].tolist() == [4, 14]
+    assert elements.elements["n8"].tolist() == [10, 20]
 
 
 def test_read_node(ref_string):
@@ -705,6 +752,57 @@ def test_element_solid_ortho(ref_string):
     assert len(elements.cards[0]._cards) == 3
 
 
+def test_element_solid_ortho_read_legacy_format_no_spaces():
+    """Test reading ElementSolidOrtho from legacy format with no spaces between IDs."""
+    legacy_no_space_string = """*ELEMENT_SOLID_ORTHO
+00000001000000020000000300000004000000050000000600000007000000080000000900000010
+             0.1             0.2             0.3
+             0.4             0.5             0.6"""
+
+    elements = kwd.ElementSolidOrtho()
+    elements.loads(legacy_no_space_string)
+
+    assert len(elements.elements) == 1, f"Expected 1 element, got {len(elements.elements)}"
+    assert elements.elements["eid"].tolist() == [1]
+    assert elements.elements["pid"].tolist() == [2]
+    assert elements.elements["n1"].tolist() == [3]
+    assert elements.elements["n2"].tolist() == [4]
+    assert elements.elements["n3"].tolist() == [5]
+    assert elements.elements["n4"].tolist() == [6]
+    assert elements.elements["n5"].tolist() == [7]
+    assert elements.elements["n6"].tolist() == [8]
+    assert elements.elements["n7"].tolist() == [9]
+    assert elements.elements["n8"].tolist() == [10]
+    assert elements.elements["a1"].tolist() == [0.1]
+    assert elements.elements["a2"].tolist() == [0.2]
+    assert elements.elements["a3"].tolist() == [0.3]
+    assert elements.elements["d1"].tolist() == [0.4]
+    assert elements.elements["d2"].tolist() == [0.5]
+    assert elements.elements["d3"].tolist() == [0.6]
+
+
+def test_element_solid_ortho_read_legacy_format_multiple_no_spaces():
+    """Test reading ElementSolidOrtho with multiple elements in legacy format without spaces."""
+    legacy_multi_no_space = """*ELEMENT_SOLID_ORTHO
+00000001000000020000000300000004000000050000000600000007000000080000000900000010
+             0.4             0.3             0.1
+             0.1             0.8             0.2
+00000011000000120000001300000014000000150000001600000017000000180000001900000020
+             0.1             0.9             0.6
+             0.0             0.0             0.1"""
+
+    elements = kwd.ElementSolidOrtho()
+    elements.loads(legacy_multi_no_space)
+
+    assert len(elements.elements) == 2, f"Expected 2 elements, got {len(elements.elements)}"
+    assert elements.elements["eid"].tolist() == [1, 11]
+    assert elements.elements["pid"].tolist() == [2, 12]
+    assert elements.elements["n1"].tolist() == [3, 13]
+    assert elements.elements["n8"].tolist() == [10, 20]
+    assert elements.elements["a1"].tolist() == [0.4, 0.1]
+    assert elements.elements["d3"].tolist() == [0.2, 0.1]
+
+
 
 def test_control_mpp_decomposition_transformation(ref_string):
     """Read CONTROL_MPP_DECOMPOSITION_TRANSFORMATION"""
@@ -1238,6 +1336,30 @@ def test_set_part_list(ref_string):
 #    assert test == ref
 
 
+def test_element_beam_orientation(ref_string):
+    """Test ELEMENT_BEAM_ORIENTATION stores multiple definitions in a DataFrame."""
+    b = kwd.ElementBeamOrientation()
+    b.loads(ref_string.test_element_beam_orientation_ref)
+
+    assert len(b.elements) == 3
+    assert list(b.elements["eid"]) == [1, 5, 8]
+    assert list(b.elements["pid"]) == [2, 2, 2]
+    assert list(b.elements["n1"]) == [3, 6, 9]
+    assert list(b.elements["n2"]) == [4, 7, 10]
+    assert list(b.elements["vx"]) == [1.0, 0.0, 0.0]
+    assert list(b.elements["vy"]) == [0.0, 1.0, 0.0]
+    assert list(b.elements["vz"]) == [0.0, 0.0, 1.0]
+    assert list(b.elements["local"]) == [2, 2, 1]
+
+    # Round-trip test
+    output = b.write()
+    b2 = kwd.ElementBeamOrientation()
+    b2.loads(output)
+    assert len(b2.elements) == 3
+    assert list(b2.elements["eid"]) == [1, 5, 8]
+    assert list(b2.elements["vx"]) == [1.0, 0.0, 0.0]
+
+
 def test_element_beam_assign(ref_string):
     """Test formatting of set part list (uses series card with ints)."""
     beam = kwd.ElementBeam(pid=1, n1=1, n2=0, local=1)
@@ -1532,3 +1654,49 @@ def test_control_shell(ref_string):
     s = kwd.ControlShell()
     s.loads(control_shell_string)
     print(s)
+    
+def test_element_mass_part_multirow(ref_string):
+    """Regression #1120: multiple rows are all read without out-of-bound warnings."""
+    kw = kwd.ElementMassPart()
+
+    kw.loads(ref_string.test_element_mass_part_multirow)
+    assert len(kw.elements) == 5
+    assert list(kw.elements["pid"]) == [1463, 1464, 415, 520, 405]
+    
+
+def test_element_mass_part_set_multirow(ref_string):
+    """Regression #1120: multiple rows are all read without out-of-bound warnings."""
+    kw = kwd.ElementMassPartSet()
+    kw.loads(ref_string.test_element_mass_part_set_multirow)
+    assert len(kw.elements) == 2
+    assert list(kw.elements["psid"]) == [10501, 10502]
+
+    
+def test_element_mass_part_set(ref_string):
+    """Regression #1120: single row is read without out-of-bound warnings."""
+    kw = kwd.ElementMassPartSet()
+    kw.loads(ref_string.test_element_mass_part_set)
+    assert len(kw.elements) == 1
+    assert list(kw.elements["psid"]) == [10501]
+    
+def test_element_mass_part_with_lcid(ref_string):
+    """Regression: second row used to trigger 'out of bound card characters'."""
+    deck = kwd.ElementMassPart()
+    deck.loads(ref_string.test_element_mass_part_with_lcid)
+    assert len(deck.elements) == 2
+    assert list(deck.elements["lcid"]) == [1, 2]
+
+def test_element_mass_part_set_with_lcid(ref_string):
+    """LCID field is correctly read for ELEMENT_MASS_PART_SET."""
+    kw = kwd.ElementMassPartSet()
+    kw.loads(ref_string.test_element_mass_part_set_with_lcid)
+    assert len(kw.elements) == 2
+    assert list(kw.elements["lcid"]) == [5, 7]
+
+def test_element_mass_part_set_with_mwd(ref_string):
+    """MWD field is correctly read for ELEMENT_MASS_PART_SET."""
+    kw = kwd.ElementMassPartSet()
+    kw.loads(ref_string.test_element_mass_part_set_with_mwd)
+    assert len(kw.elements) == 1
+    assert list(kw.elements["mwd"]) == [1]
+    
